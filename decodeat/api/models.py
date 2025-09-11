@@ -8,10 +8,10 @@ from enum import Enum
 
 
 class DecodeStatus(str, Enum):
-    """Decode status enum matching requirements 4.7, 4.8, 4.9."""
-    COMPLETED = "completed"
-    CANCELLED = "cancelled" 
-    FAILED = "failed"
+    """Decode status enum matching Spring Boot's DecodeStatus."""
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED" 
+    FAILED = "FAILED"
 
 
 class AnalyzeRequest(BaseModel):
