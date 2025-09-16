@@ -1,4 +1,4 @@
-"""OCR service for extracting text from images using Google Cloud Vision API."""
+"""Google Cloud Vision API를 사용하여 이미지에서 텍스트를 추출하는 OCR 서비스입니다."""
 
 import asyncio
 from typing import Optional
@@ -13,46 +13,46 @@ logger = LoggingService(__name__)
 
 
 class OCRService:
-    """Service for extracting text from images using Google Cloud Vision API."""
+    """Google Cloud Vision API를 사용하여 이미지에서 텍스트를 추출하는 서비스입니다."""
     
     def __init__(self):
-        """Initialize the OCR service."""
+        """OCR 서비스를 초기화합니다."""
         self._client: Optional[ImageAnnotatorClient] = None
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ocr-worker")
     
     @property
     def client(self) -> ImageAnnotatorClient:
-        """Get or create the Vision API client."""
+        """Vision API 클라이언트를 가져오거나 생성합니다."""
         if self._client is None:
             try:
                 self._client = ImageAnnotatorClient()
-                logger.info("Google Cloud Vision API client initialized successfully")
+                logger.info("Google Cloud Vision API 클라이언트가 성공적으로 초기화되었습니다")
             except Exception as e:
-                logger.error(f"Failed to initialize Google Cloud Vision API client: {e}", exc_info=True)
-                raise RuntimeError(f"Failed to initialize Google Cloud Vision API client: {e}")
+                logger.error(f"Google Cloud Vision API 클라이언트 초기화 실패: {e}", exc_info=True)
+                raise RuntimeError(f"Google Cloud Vision API 클라이언트 초기화 실패: {e}")
         return self._client
     
     async def extract_text(self, image_bytes: bytes) -> str:
         """
-        Extract text from image using Google Cloud Vision API.
+        Google Cloud Vision API를 사용하여 이미지에서 텍스트를 추출합니다.
         
         Args:
-            image_bytes: Raw image data as bytes
+            image_bytes: 바이트 형식의 원본 이미지 데이터
             
         Returns:
-            str: Extracted text from the image
+            str: 이미지에서 추출된 텍스트
             
         Raises:
-            ValueError: If image_bytes is empty or invalid
-            RuntimeError: If Google Cloud Vision API fails
+            ValueError: image_bytes가 비어 있거나 유효하지 않은 경우
+            RuntimeError: Google Cloud Vision API 호출이 실패하는 경우
         """
         if not image_bytes:
-            raise ValueError("Image bytes cannot be empty")
+            raise ValueError("이미지 바이트는 비어 있을 수 없습니다")
         
-        logger.info(f"Starting text extraction from image ({len(image_bytes)} bytes)")
+        logger.info(f"이미지({len(image_bytes)} 바이트)에서 텍스트 추출 시작")
         
         try:
-            # Run the synchronous Vision API call in a thread pool
+            # 동기적인 Vision API 호출을 스레드 풀에서 실행합니다
             loop = asyncio.get_event_loop()
             text = await loop.run_in_executor(
                 self._executor,
@@ -60,98 +60,98 @@ class OCRService:
                 image_bytes
             )
             
-            logger.info(f"Text extraction completed. Extracted {len(text)} characters")
+            logger.info(f"텍스트 추출 완료. {len(text)}자 추출됨")
             return text
             
         except GoogleCloudError as e:
-            logger.error(f"Google Cloud Vision API error: {e}", exc_info=True)
-            raise RuntimeError(f"Google Cloud Vision API error: {e}")
+            logger.error(f"Google Cloud Vision API 오류: {e}", exc_info=True)
+            raise RuntimeError(f"Google Cloud Vision API 오류: {e}")
         
         except Exception as e:
-            logger.error(f"Unexpected error during text extraction: {e}", exc_info=True)
-            raise RuntimeError(f"Text extraction failed: {e}")
+            logger.error(f"텍스트 추출 중 예기치 않은 오류 발생: {e}", exc_info=True)
+            raise RuntimeError(f"텍스트 추출 실패: {e}")
     
     def _extract_text_sync(self, image_bytes: bytes) -> str:
         """
-        Synchronous text extraction using Google Cloud Vision API.
+        Google Cloud Vision API를 사용하는 동기 방식 텍스트 추출 메서드입니다.
         
         Args:
-            image_bytes: Raw image data as bytes
+            image_bytes: 바이트 형식의 원본 이미지 데이터
             
         Returns:
-            str: Extracted text from the image
+            str: 이미지에서 추출된 텍스트
             
         Raises:
-            GoogleCloudError: If Vision API request fails
-            RuntimeError: If no text is detected or response is invalid
+            GoogleCloudError: Vision API 요청이 실패하는 경우
+            RuntimeError: 텍스트가 감지되지 않거나 응답이 유효하지 않은 경우
         """
         try:
-            # Create Vision API image object
+            # Vision API 이미지 객체를 생성합니다
             image = Image(content=image_bytes)
             
-            # Perform document text detection
+            # 문서 텍스트 감지를 수행합니다
             response = self.client.document_text_detection(image=image)
             
-            # Check for API errors
+            # API 오류를 확인합니다
             if response.error.message:
-                raise GoogleCloudError(f"Vision API error: {response.error.message}")
+                raise GoogleCloudError(f"Vision API 오류: {response.error.message}")
             
-            # Extract text from response
+            # 응답에서 텍스트를 추출합니다
             if response.text_annotations:
                 extracted_text = response.text_annotations[0].description
                 if extracted_text:
                     return extracted_text.strip()
             
-            # No text detected
-            logger.warning("No text detected in the image")
+            # 텍스트가 감지되지 않았습니다
+            logger.warning("이미지에서 텍스트가 감지되지 않았습니다")
             return ""
             
         except GoogleCloudError:
             raise
         except Exception as e:
-            raise RuntimeError(f"Failed to process image with Vision API: {e}")
+            raise RuntimeError(f"Vision API로 이미지 처리 실패: {e}")
     
     async def extract_text_from_multiple_images(self, images_bytes: list[bytes]) -> list[str]:
         """
-        Extract text from multiple images concurrently.
+        여러 이미지에서 동시에 텍스트를 추출합니다.
         
         Args:
-            images_bytes: List of raw image data as bytes
+            images_bytes: 바이트 형식의 원본 이미지 데이터 목록
             
         Returns:
-            list[str]: List of extracted text from each image
+            list[str]: 각 이미지에서 추출된 텍스트 목록
             
         Raises:
-            ValueError: If images_bytes is empty or contains invalid data
-            RuntimeError: If any Google Cloud Vision API call fails
+            ValueError: images_bytes가 비어 있거나 유효하지 않은 데이터를 포함하는 경우
+            RuntimeError: Google Cloud Vision API 호출 중 하나라도 실패하는 경우
         """
         if not images_bytes:
-            raise ValueError("Images bytes list cannot be empty")
+            raise ValueError("이미지 바이트 목록은 비어 있을 수 없습니다")
         
-        logger.info(f"Starting text extraction from {len(images_bytes)} images")
+        logger.info(f"{len(images_bytes)}개 이미지에서 텍스트 추출 시작")
         
         try:
-            # Extract text from all images concurrently
+            # 모든 이미지에서 동시에 텍스트를 추출합니다
             tasks = [self.extract_text(image_bytes) for image_bytes in images_bytes]
             results = await asyncio.gather(*tasks)
             
-            logger.info(f"Successfully extracted text from {len(results)} images")
+            logger.info(f"{len(results)}개 이미지에서 텍스트 추출 성공")
             return results
             
         except Exception as e:
-            logger.error(f"Failed to extract text from multiple images: {e}", exc_info=True)
+            logger.error(f"여러 이미지에서 텍스트 추출 실패: {e}", exc_info=True)
             raise
     
     async def close(self):
-        """Close the OCR service and clean up resources."""
+        """OCR 서비스를 닫고 리소스를 정리합니다."""
         if self._executor:
             self._executor.shutdown(wait=True)
-            logger.info("OCR service executor shutdown completed")
+            logger.info("OCR 서비스 실행기 종료 완료")
     
     async def __aenter__(self):
-        """Async context manager entry."""
+        """비동기 컨텍스트 관리자 진입점입니다."""
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
+        """비동기 컨텍스트 관리자 종료점입니다."""
         await self.close()
