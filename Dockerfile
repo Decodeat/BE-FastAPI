@@ -1,28 +1,66 @@
-# syntax=docker/dockerfile:1
-FROM python:3.11-slim
+# Multi-stage build for optimized production image
+FROM python:3.11-slim as builder
 
-# 환경 변수 설정
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# 작업 디렉토리 생성 및 설정
-WORKDIR /app
-
-# 시스템 패키지 설치 (필요시 추가)
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# requirements.txt 복사 및 패키지 설치
-COPY requirements.txt ./
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# Create and activate virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# 소스 코드 복사
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim as production
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy virtual environment from builder stage
+COPY --from=builder /opt/venv /opt/venv
+
+# Create non-root user for security
+RUN groupadd -r decodeat && useradd -r -g decodeat decodeat
+
+# Set working directory
+WORKDIR /app
+
+# Copy application code
 COPY . .
 
-# FastAPI 실행 (포트 8000)
-CMD ["uvicorn", "decodeat.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Create necessary directories and set permissions
+RUN mkdir -p /app/logs /app/cache && \
+    chown -R decodeat:decodeat /app
+
+# Switch to non-root user
+USER decodeat
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the application
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

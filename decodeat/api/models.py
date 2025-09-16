@@ -2,9 +2,10 @@
 Pydantic models for API requests and responses.
 Designed to match Spring server's database structure.
 """
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, validator
 from enum import Enum
+from datetime import datetime
 
 
 class DecodeStatus(str, Enum):
@@ -130,4 +131,136 @@ class ValidationErrorResponse(BaseModel):
             "msg": "ensure this value has at most 2 items",
             "type": "value_error.list.max_items"
         }]
+    )
+
+
+# Recommendation API Models
+
+class UserBehavior(BaseModel):
+    """User behavior data model for recommendations."""
+    
+    product_id: int = Field(..., description="Product ID that user interacted with")
+    behavior_type: str = Field(
+        ..., 
+        description="Type of behavior: VIEW, LIKE, REGISTER, SEARCH",
+        example="LIKE"
+    )
+    timestamp: Optional[datetime] = Field(
+        None, 
+        description="When the behavior occurred"
+    )
+    
+    @validator('behavior_type')
+    def validate_behavior_type(cls, v):
+        """Validate behavior type."""
+        valid_types = ['VIEW', 'LIKE', 'REGISTER', 'SEARCH']
+        if v not in valid_types:
+            raise ValueError(f"behavior_type must be one of: {valid_types}")
+        return v
+
+
+class UserBasedRecommendationRequest(BaseModel):
+    """Request model for user-based recommendations."""
+    
+    user_id: int = Field(..., description="User ID to generate recommendations for")
+    behavior_data: List[UserBehavior] = Field(
+        ..., 
+        description="User's behavior history",
+        min_items=1
+    )
+    limit: int = Field(
+        20, 
+        description="Maximum number of recommendations to return",
+        ge=1,
+        le=50
+    )
+
+
+class ProductBasedRecommendationRequest(BaseModel):
+    """Request model for product-based recommendations."""
+    
+    product_id: int = Field(..., description="Reference product ID")
+    limit: int = Field(
+        15, 
+        description="Maximum number of similar products to return",
+        ge=1,
+        le=50
+    )
+
+
+class RecommendationResult(BaseModel):
+    """Individual recommendation result."""
+    
+    product_id: int = Field(..., description="Recommended product ID")
+    similarity_score: float = Field(
+        ..., 
+        description="Similarity score (0-1, higher is more similar)",
+        ge=0.0,
+        le=1.0
+    )
+    recommendation_reason: str = Field(
+        ..., 
+        description="Explanation for why this product was recommended",
+        example="사용자가 좋아요한 제품과 유사한 영양성분"
+    )
+
+
+class RecommendationResponse(BaseModel):
+    """Response model for recommendation requests."""
+    
+    recommendations: List[RecommendationResult] = Field(
+        ..., 
+        description="List of recommended products"
+    )
+    total_count: int = Field(
+        ..., 
+        description="Total number of recommendations returned"
+    )
+    user_id: Optional[int] = Field(
+        None, 
+        description="User ID (for user-based recommendations)"
+    )
+    reference_product_id: Optional[int] = Field(
+        None, 
+        description="Reference product ID (for product-based recommendations)"
+    )
+    recommendation_type: str = Field(
+        ...,
+        description="Type of recommendation: user-based, product-based, fallback",
+        example="user-based"
+    )
+    data_quality: str = Field(
+        "good",
+        description="Quality of recommendation data: excellent, good, fair, poor",
+        example="good"
+    )
+    message: Optional[str] = Field(
+        None,
+        description="Additional information about the recommendation process",
+        example="Recommendations based on your recent activity"
+    )
+
+
+class RecommendationErrorResponse(BaseModel):
+    """Error response model for recommendation failures."""
+    
+    error_code: str = Field(
+        ...,
+        description="Error code for the failure",
+        example="INSUFFICIENT_DATA"
+    )
+    error_message: str = Field(
+        ...,
+        description="Human-readable error message",
+        example="Not enough user behavior data to generate recommendations"
+    )
+    details: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Additional error details",
+        example={"required_behaviors": 1, "provided_behaviors": 0}
+    )
+    fallback_available: bool = Field(
+        False,
+        description="Whether fallback recommendations are available",
+        example=True
     )

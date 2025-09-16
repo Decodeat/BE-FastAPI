@@ -17,6 +17,7 @@ if os.path.basename(os.getcwd()) == "decodeat":
 
 from decodeat.config import settings
 from decodeat.api.routes import router as api_router
+from decodeat.api.recommendation_routes import recommendation_router
 
 
 def create_app() -> FastAPI:
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     
     # Include API routes
     app.include_router(api_router, prefix="/api/v1")
+    app.include_router(recommendation_router, prefix="/api/v1/recommend")
     
     # Health check endpoint
     @app.get("/health")
