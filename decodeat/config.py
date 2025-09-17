@@ -49,6 +49,10 @@ class Settings(BaseSettings):
         description="Allowed image MIME types"
     )
     
+    # ChromaDB settings
+    chroma_host: str = Field("localhost", env="CHROMA_HOST", description="ChromaDB host")
+    chroma_port: int = Field(8001, env="CHROMA_PORT", description="ChromaDB port")
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
