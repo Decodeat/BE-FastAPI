@@ -238,3 +238,74 @@ graph LR
 - 비동기 처리로 동시성 향상
 - 캐싱 레이어로 응답 속도 개선
 - 성능 모니터링 및 측정
+
+## 전체 시스템 아키텍처 (AWS 배포)
+
+```mermaid
+graph TD
+    subgraph "End-User"
+        Client[📱💻 Client Application]
+    end
+
+    subgraph "AWS Cloud ap-northeast-2"
+        ALB[Application Load Balancer]
+        subgraph "Amazon EC2"
+            SpringBoot[Spring Boot Server]
+            FastAPI[FastAPI Server<br/>Port 8000]
+        end
+        subgraph "Data Persistence Layer"
+            RDS[Amazon RDS<br/>MySQL/PostgreSQL]
+            S3[Amazon S3<br/>Image Storage]
+            VectorDB[ChromaDB<br/>Vector Database]
+        end
+    end
+
+    subgraph "External Services"
+        Kakao[Kakao Authentication API]
+        GoogleAI[Google Cloud AI Platform<br/>Vision API + Gemini]
+    end
+
+    %% Authentication Flow
+    Client -->|HTTPS Request| ALB
+    ALB -->|HTTP| SpringBoot
+    SpringBoot -->|1. Kakao Redirect| Client
+    Client -->|2. User Consent| Kakao
+    Kakao -->|3. Auth Code| SpringBoot
+    SpringBoot -->|4. Token Request| Kakao
+    Kakao -->|5. Access Token| SpringBoot
+    SpringBoot -->|6. User Info Request| Kakao
+    Kakao -->|7. User Profile| SpringBoot
+    SpringBoot -->|8. Issue JWT| Client
+
+    %% Image Analysis Flow
+    Client -->|Image Upload JWT| SpringBoot
+    SpringBoot -->|AWS SDK| S3
+    SpringBoot -->|JDBC| RDS
+    SpringBoot -->|HTTP POST Image Location| FastAPI
+    FastAPI -->|AWS SDK| S3
+    FastAPI -->|REST API Call| GoogleAI
+    GoogleAI -->|Analysis Result JSON| FastAPI
+    FastAPI -->|Generate Vector| FastAPI
+    FastAPI -->|Analysis Result + Vector JSON| SpringBoot
+    SpringBoot -->|Store Vector| VectorDB
+    SpringBoot -->|JDBC Update| RDS
+    SpringBoot -->|HTTP 200 OK| Client
+
+    %% Recommendation Flow
+    Client -->|Recommendation Request JWT| SpringBoot
+    SpringBoot -->|Query by ID| VectorDB
+    SpringBoot -->|k-NN Search| VectorDB
+    VectorDB -->|Similar Image IDs| SpringBoot
+    SpringBoot -->|JDBC Batch Fetch| RDS
+    SpringBoot -->|JSON Response| Client
+
+    %% Styling
+    classDef client fill:#e1f5fe
+    classDef aws fill:#ff9800
+    classDef external fill:#4caf50
+    classDef database fill:#9c27b0
+    
+    class Client client
+    class ALB,SpringBoot,FastAPI,RDS,S3,VectorDB aws
+    class Kakao,GoogleAI external
+```
