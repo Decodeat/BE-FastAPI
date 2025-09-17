@@ -1,4 +1,4 @@
-"""Image download service for nutrition label analysis."""
+"""영양성분표 분석을 위한 이미지 다운로드 서비스입니다."""
 
 import asyncio
 import logging
@@ -15,104 +15,104 @@ logger = LoggingService(__name__)
 
 
 class ImageDownloadService:
-    """Service for downloading and validating images from URLs."""
+    """URL에서 이미지를 다운로드하고 유효성을 검사하는 서비스입니다."""
     
-    # Supported image formats
+    # 지원하는 이미지 형식
     SUPPORTED_FORMATS = {'JPEG', 'PNG', 'WEBP', 'BMP', 'GIF'}
     
-    # Maximum file size (10MB)
+    # 최대 파일 크기 (10MB)
     MAX_FILE_SIZE = 10 * 1024 * 1024
     
-    # Request timeout in seconds
+    # 요청 타임아웃 (초)
     REQUEST_TIMEOUT = 30.0
     
     def __init__(self):
-        """Initialize the image download service."""
+        """이미지 다운로드 서비스를 초기화합니다."""
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.REQUEST_TIMEOUT),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
         )
     
     async def __aenter__(self):
-        """Async context manager entry."""
+        """비동기 컨텍스트 관리자 진입점입니다."""
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
+        """비동기 컨텍스트 관리자 종료점입니다."""
         await self.client.aclose()
     
     async def download_image(self, url: str) -> bytes:
         """
-        Download image from URL with validation and error handling.
+        URL에서 이미지를 다운로드하고 유효성 검사 및 오류 처리를 수행합니다.
         
         Args:
-            url: The URL to download the image from
+            url: 이미지를 다운로드할 URL
             
         Returns:
-            bytes: The downloaded image data
+            bytes: 다운로드된 이미지 데이터
             
         Raises:
-            ValueError: If URL is invalid or image format is not supported
-            httpx.HTTPError: If network request fails
-            RuntimeError: If image is too large or corrupted
+            ValueError: URL이 유효하지 않거나 지원되지 않는 이미지 형식일 경우
+            httpx.HTTPError: 네트워크 요청이 실패할 경우
+            RuntimeError: 이미지가 너무 크거나 손상된 경우
         """
-        logger.info(f"Starting image download from URL: {url}")
+        logger.info(f"URL에서 이미지 다운로드 시작: {url}")
         
-        # Validate URL format
+        # URL 형식 검사
         if not self._is_valid_url(url):
-            raise ValueError(f"Invalid URL format: {url}")
+            raise ValueError(f"잘못된 URL 형식입니다: {url}")
         
         try:
-            # Download image with streaming to check size
+            # 스트리밍으로 이미지를 다운로드하여 크기 확인
             async with self.client.stream('GET', url) as response:
                 response.raise_for_status()
                 
-                # Check content type (allow fallback to URL extension check)
+                # Content-Type 확인 (URL 확장자 확인으로 대체 허용)
                 content_type = response.headers.get('content-type', '').lower()
                 if not self._is_image_content_type(content_type) and not self._is_image_url(url):
-                    raise ValueError(f"URL does not point to an image. Content-Type: {content_type}")
+                    raise ValueError(f"URL이 이미지를 가리키지 않습니다. Content-Type: {content_type}")
                 
-                # Download with size limit
+                # 크기 제한을 두고 다운로드
                 image_data = BytesIO()
                 total_size = 0
                 
                 async for chunk in response.aiter_bytes(chunk_size=8192):
                     total_size += len(chunk)
                     if total_size > self.MAX_FILE_SIZE:
-                        raise RuntimeError(f"Image too large. Maximum size: {self.MAX_FILE_SIZE} bytes")
+                        raise RuntimeError(f"이미지가 너무 큽니다. 최대 크기: {self.MAX_FILE_SIZE} 바이트")
                     image_data.write(chunk)
                 
                 image_bytes = image_data.getvalue()
                 
-                # Validate image format and integrity (this is the definitive check)
-                logger.info(f"Starting image format validation for {len(image_bytes)} bytes")
+                # 이미지 형식 및 무결성 검사 (이것이 최종 확인 단계)
+                logger.info(f"{len(image_bytes)} 바이트 이미지 형식 유효성 검사 시작")
                 if not self._validate_image_format(image_bytes):
-                    raise ValueError(f"Invalid or corrupted image format. URL: {url}, Size: {len(image_bytes)} bytes")
+                    raise ValueError(f"잘못되었거나 손상된 이미지 형식입니다. URL: {url}, 크기: {len(image_bytes)} 바이트")
                 
-                logger.info(f"Successfully downloaded image: {len(image_bytes)} bytes")
+                logger.info(f"이미지 다운로드 성공: {len(image_bytes)} 바이트")
                 return image_bytes
                 
         except httpx.TimeoutException as e:
-            logger.error(f"Timeout downloading image from {url}: {e}")
-            raise httpx.HTTPError(f"Request timeout while downloading image from {url}")
+            logger.error(f"{url}에서 이미지 다운로드 중 타임아웃 발생: {e}")
+            raise httpx.HTTPError(f"{url}에서 이미지 다운로드 중 요청 시간이 초과되었습니다.")
         
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error downloading image from {url}: {e.response.status_code}")
-            raise httpx.HTTPError(f"HTTP {e.response.status_code} error downloading image from {url}")
+            logger.error(f"{url}에서 이미지 다운로드 중 HTTP 오류 발생: {e.response.status_code}")
+            raise httpx.HTTPError(f"{url}에서 이미지 다운로드 중 HTTP {e.response.status_code} 오류가 발생했습니다.")
         
         except httpx.RequestError as e:
-            logger.error(f"Network error downloading image from {url}: {e}")
-            raise httpx.HTTPError(f"Network error downloading image from {url}: {str(e)}")
+            logger.error(f"{url}에서 이미지 다운로드 중 네트워크 오류 발생: {e}")
+            raise httpx.HTTPError(f"{url}에서 이미지 다운로드 중 네트워크 오류가 발생했습니다: {str(e)}")
     
     def _is_valid_url(self, url: str) -> bool:
         """
-        Validate URL format.
+        URL 형식을 검사합니다.
         
         Args:
-            url: URL to validate
+            url: 검사할 URL
             
         Returns:
-            bool: True if URL is valid, False otherwise
+            bool: URL이 유효하면 True, 그렇지 않으면 False
         """
         try:
             result = urlparse(url)
@@ -122,13 +122,13 @@ class ImageDownloadService:
     
     def _is_image_content_type(self, content_type: str) -> bool:
         """
-        Check if content type indicates an image.
+        Content-Type이 이미지인지 확인합니다.
         
         Args:
-            content_type: HTTP Content-Type header value
+            content_type: HTTP Content-Type 헤더 값
             
         Returns:
-            bool: True if content type is an image, False otherwise
+            bool: Content-Type이 이미지 형식이면 True, 그렇지 않으면 False
         """
         image_types = [
             'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
@@ -138,13 +138,13 @@ class ImageDownloadService:
     
     def _is_image_url(self, url: str) -> bool:
         """
-        Check if URL has an image file extension.
+        URL에 이미지 파일 확장자가 있는지 확인합니다.
         
         Args:
-            url: URL to check
+            url: 확인할 URL
             
         Returns:
-            bool: True if URL has an image extension, False otherwise
+            bool: URL에 이미지 확장자가 있으면 True, 그렇지 않으면 False
         """
         image_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tiff']
         url_lower = url.lower()
@@ -152,161 +152,161 @@ class ImageDownloadService:
     
     def _validate_image_format(self, image_bytes: bytes) -> bool:
         """
-        Validate image format and integrity using PIL with JPEG-specific handling.
+        PIL을 사용하여 이미지 형식과 무결성을 검사합니다. JPEG는 특별 처리합니다.
         
         Args:
-            image_bytes: Raw image data
+            image_bytes: 원본 이미지 데이터
             
         Returns:
-            bool: True if image is valid and supported, False otherwise
+            bool: 이미지가 유효하고 지원되는 형식이면 True, 그렇지 않으면 False
         """
         try:
-            # First, try to open and get basic info
+            # 먼저, 이미지를 열어 기본 정보를 가져옵니다
             with Image.open(BytesIO(image_bytes)) as img:
                 img_format = img.format
                 img_size = img.size
                 
-                logger.info(f"Image opened successfully: format={img_format}, size={img_size}")
+                logger.info(f"이미지를 성공적으로 열었습니다: 형식={img_format}, 크기={img_size}")
                 
-                # Check if format is supported
+                # 지원되는 형식인지 확인
                 if img_format not in self.SUPPORTED_FORMATS:
-                    logger.warning(f"Unsupported image format: {img_format}")
+                    logger.warning(f"지원되지 않는 이미지 형식입니다: {img_format}")
                     return False
                 
-                # Check minimum dimensions (at least 50x50 pixels)
+                # 최소 크기 확인 (최소 50x50 픽셀)
                 if img_size[0] < 50 or img_size[1] < 50:
-                    logger.warning(f"Image too small: {img_size}")
+                    logger.warning(f"이미지가 너무 작습니다: {img_size}")
                     return False
                 
-                # JPEG-specific handling
+                # JPEG 특별 처리
                 if img_format == 'JPEG':
                     return self._validate_jpeg_image(img, image_bytes)
                 else:
-                    # For non-JPEG images, use lighter validation
+                    # JPEG가 아닌 이미지의 경우 더 가벼운 유효성 검사 사용
                     try:
-                        # Don't use verify() as it can be too strict
-                        # Just try to get mode and size
+                        # verify()는 너무 엄격할 수 있으므로 사용하지 않음
+                        # mode와 size를 가져오는 것만 시도
                         _ = img.mode
-                        logger.info(f"Image validation passed: {img_format}, {img_size}")
+                        logger.info(f"이미지 유효성 검사 통과: {img_format}, {img_size}")
                         return True
                     except Exception as e:
-                        logger.warning(f"Image validation warning: {e}, but format is valid")
-                        return True  # If we can open it, it's probably fine
+                        logger.warning(f"이미지 유효성 검사 경고: {e}, 하지만 형식은 유효합니다")
+                        return True  # 이미지를 열 수 있다면 아마도 괜찮은 것
                 
         except Exception as e:
-            logger.error(f"Image validation failed during opening: {type(e).__name__}: {e}")
+            logger.error(f"이미지를 여는 중 유효성 검사 실패: {type(e).__name__}: {e}")
             return self._try_lenient_validation(image_bytes)
     
     def _validate_jpeg_image(self, img, image_bytes: bytes) -> bool:
         """
-        Special validation for JPEG images with multiple fallback strategies.
+        여러 대체 전략을 사용하여 JPEG 이미지를 특별 검사합니다.
         
         Args:
-            img: PIL Image object
-            image_bytes: Raw image data
+            img: PIL 이미지 객체
+            image_bytes: 원본 이미지 데이터
             
         Returns:
-            bool: True if JPEG is valid, False otherwise
+            bool: JPEG가 유효하면 True, 그렇지 않으면 False
         """
         try:
-            # Strategy 1: Try to get basic properties without verify()
+            # 전략 1: verify() 없이 기본 속성을 가져오려고 시도
             _ = img.mode
             _ = img.size
-            logger.info(f"JPEG validation passed with basic check: {img.size}")
+            logger.info(f"기본 검사를 통해 JPEG 유효성 검사 통과: {img.size}")
             return True
             
         except Exception as e1:
-            logger.warning(f"JPEG basic check failed: {type(e1).__name__}: {e1}")
+            logger.warning(f"JPEG 기본 검사 실패: {type(e1).__name__}: {e1}")
             
             try:
-                # Strategy 2: Try to convert to RGB (handles CMYK, etc.)
+                # 전략 2: RGB로 변환 시도 (CMYK 등 처리)
                 with Image.open(BytesIO(image_bytes)) as fresh_img:
                     rgb_img = fresh_img.convert('RGB')
                     _ = rgb_img.size
-                    logger.info(f"JPEG validation passed with RGB conversion: {fresh_img.size}")
+                    logger.info(f"RGB 변환을 통해 JPEG 유효성 검사 통과: {fresh_img.size}")
                     return True
                 
             except Exception as e2:
-                logger.warning(f"JPEG RGB conversion failed: {type(e2).__name__}: {e2}")
+                logger.warning(f"JPEG RGB 변환 실패: {type(e2).__name__}: {e2}")
                 
-                # Strategy 3: Check JPEG magic bytes as last resort
+                # 전략 3: 최후의 수단으로 JPEG 매직 바이트 확인
                 return self._is_jpeg_by_header(image_bytes)
     
     def _is_jpeg_by_header(self, image_bytes: bytes) -> bool:
         """
-        Check if image is JPEG by examining file header (magic bytes).
+        파일 헤더(매직 바이트)를 검사하여 이미지가 JPEG인지 확인합니다.
         
         Args:
-            image_bytes: Raw image data
+            image_bytes: 원본 이미지 데이터
             
         Returns:
-            bool: True if appears to be JPEG, False otherwise
+            bool: JPEG로 보이면 True, 그렇지 않으면 False
         """
         try:
-            # JPEG files start with FF D8
+            # JPEG 파일은 FF D8로 시작함
             if len(image_bytes) < 4:
-                logger.warning("Image too small for JPEG header check")
+                logger.warning("이미지가 너무 작아 JPEG 헤더를 확인할 수 없습니다")
                 return False
                 
-            # Check JPEG magic bytes
+            # JPEG 매직 바이트 확인
             if image_bytes[:2] == b'\xff\xd8':
-                logger.info("JPEG validation passed with header check (FF D8 magic bytes)")
+                logger.info("헤더 검사(FF D8 매직 바이트)를 통해 JPEG 유효성 검사 통과")
                 return True
                 
-            logger.warning("Not a valid JPEG - missing magic bytes")
+            logger.warning("유효한 JPEG가 아님 - 매직 바이트가 없습니다")
             return False
             
         except Exception as e:
-            logger.error(f"JPEG header check failed: {e}")
+            logger.error(f"JPEG 헤더 확인 실패: {e}")
             return False
     
     def _try_lenient_validation(self, image_bytes: bytes) -> bool:
         """
-        Last resort validation - very lenient approach.
+        최후의 유효성 검사 - 매우 관대한 접근 방식입니다.
         
         Args:
-            image_bytes: Raw image data
+            image_bytes: 원본 이미지 데이터
             
         Returns:
-            bool: True if image seems valid, False otherwise
+            bool: 이미지가 유효해 보이면 True, 그렇지 않으면 False
         """
         try:
-            # Just try to open without any operations
+            # 아무 작업 없이 열기만 시도
             with Image.open(BytesIO(image_bytes)) as img:
                 img_format = img.format
                 if img_format in self.SUPPORTED_FORMATS:
-                    logger.info(f"Image validation passed with lenient check: {img_format}")
+                    logger.info(f"관대한 검사를 통해 이미지 유효성 검사 통과: {img_format}")
                     return True
                     
         except Exception as e:
-            logger.error(f"Lenient image validation also failed: {type(e).__name__}: {e}")
+            logger.error(f"관대한 이미지 유효성 검사도 실패: {type(e).__name__}: {e}")
         
         return False
     
     async def download_multiple_images(self, urls: list[str]) -> list[bytes]:
         """
-        Download multiple images concurrently.
+        여러 이미지를 동시에 다운로드합니다.
         
         Args:
-            urls: List of URLs to download
+            urls: 다운로드할 URL 목록
             
         Returns:
-            list[bytes]: List of downloaded image data
+            list[bytes]: 다운로드된 이미지 데이터 목록
             
         Raises:
-            ValueError: If any URL is invalid or image format is not supported
-            httpx.HTTPError: If any network request fails
-            RuntimeError: If any image is too large or corrupted
+            ValueError: URL 중 하나라도 유효하지 않거나 지원되지 않는 이미지 형식일 경우
+            httpx.HTTPError: 네트워크 요청 중 하나라도 실패할 경우
+            RuntimeError: 이미지 중 하나라도 너무 크거나 손상된 경우
         """
-        logger.info(f"Starting concurrent download of {len(urls)} images")
+        logger.info(f"{len(urls)}개 이미지 동시 다운로드 시작")
         
-        # Download all images concurrently
+        # 모든 이미지를 동시에 다운로드
         tasks = [self.download_image(url) for url in urls]
         results = await asyncio.gather(*tasks)
         
-        logger.info(f"Successfully downloaded {len(results)} images")
+        logger.info(f"{len(results)}개 이미지 다운로드 성공")
         return results
     
     async def close(self):
-        """Close the HTTP client."""
+        """HTTP 클라이언트를 닫습니다."""
         await self.client.aclose()

@@ -1,6 +1,6 @@
 """
-AI Analysis Service for nutrition label analysis.
-Provides structured nutrition information extraction using Gemini AI.
+영양성분표 분석을 위한 AI 분석 서비스입니다.
+Gemini AI를 사용하여 구조화된 영양 정보를 추출합니다.
 """
 import json
 import logging
@@ -14,65 +14,65 @@ logger = logging.getLogger(__name__)
 
 
 class AnalysisService:
-    """Service for analyzing nutrition information using Gemini AI."""
+    """Gemini AI를 사용하여 영양 정보를 분석하는 서비스입니다."""
     
     def __init__(self):
-        """Initialize the analysis service with Gemini AI."""
+        """Gemini AI로 분석 서비스를 초기화합니다."""
         if not settings.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY is required for analysis service")
+            raise ValueError("GEMINI_API_KEY는 분석 서비스에 필수입니다")
         
         genai.configure(api_key=settings.gemini_api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
-        logger.info("AnalysisService initialized successfully")
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
+        logger.info("AnalysisService가 성공적으로 초기화되었습니다")
     
     def _normalize_product_name(self, product_name: str) -> str:
         """
-        Normalize product name by removing spaces and keeping only Korean/English/numbers.
+        공백을 제거하고 한글/영어/숫자만 남겨 제품명을 정규화합니다.
         
-        Implements requirement 4.3: Remove spaces and keep only Korean/English/numbers.
+        요구사항 4.3 구현: 공백을 제거하고 한글/영어/숫자만 유지합니다.
         
         Args:
-            product_name: Raw product name from analysis
+            product_name: 분석에서 얻은 원본 제품명
             
         Returns:
-            str: Normalized product name
+            str: 정규화된 제품명
         """
         if not product_name:
             return ""
         
-        # Remove all spaces and keep only Korean, English, and numbers
+        # 모든 공백을 제거하고 한글, 영어, 숫자만 유지합니다
         normalized = re.sub(r'[^\w가-힣]', '', product_name)
-        logger.debug(f"Normalized product name: '{product_name}' -> '{normalized}'")
+        logger.debug(f"제품명 정규화: '{product_name}' -> '{normalized}'")
         return normalized
     
     def _extract_nutrition_values(self, nutrition_data: Dict) -> NutritionInfo:
         """
-        Extract nutrition values and remove units, keeping only number strings.
+        단위를 제거하고 숫자 문자열만 유지하여 영양성분 값을 추출합니다.
         
-        Implements requirements 4.4 and 4.5: Remove units, return number strings, use null for missing values.
+        요구사항 4.4 및 4.5 구현: 단위를 제거하고, 숫자 문자열을 반환하며, 누락된 값에는 null을 사용합니다.
         
         Args:
-            nutrition_data: Raw nutrition data from AI analysis
+            nutrition_data: AI 분석에서 얻은 원본 영양 데이터
             
         Returns:
-            NutritionInfo: Structured nutrition information
+            NutritionInfo: 구조화된 영양 정보
         """
         def extract_number(value) -> Optional[str]:
-            """Extract number from value string, removing units."""
+            """값 문자열에서 단위를 제거하고 숫자만 추출합니다."""
             if not value or value == "null" or value == "정보없음":
                 return None
             
-            # Convert to string if not already
+            # 문자열이 아니면 문자열로 변환합니다
             value_str = str(value).strip()
             
-            # Extract numbers (including decimals) from the string
+            # 문자열에서 숫자(소수점 포함)를 추출합니다
             number_match = re.search(r'(\d+(?:\.\d+)?)', value_str)
             if number_match:
                 return number_match.group(1)
             
             return None
         
-        # Map the nutrition data to NutritionInfo fields
+        # 영양 데이터를 NutritionInfo 필드에 매핑합니다
         nutrition_info = NutritionInfo(
             calcium=extract_number(nutrition_data.get('calcium')),
             carbohydrate=extract_number(nutrition_data.get('carbohydrate')),
@@ -87,27 +87,27 @@ class AnalysisService:
             trans_fat=extract_number(nutrition_data.get('trans_fat'))
         )
         
-        logger.debug(f"Extracted nutrition values: {nutrition_info}")
+        logger.debug(f"추출된 영양성분 값: {nutrition_info}")
         return nutrition_info
     
     def _parse_ingredients(self, ingredients_text: str) -> Optional[List[str]]:
         """
-        Parse ingredients text into a list of individual ingredients.
+        원재료 텍스트를 파싱하여 개별 원재료 목록으로 만듭니다.
         
         Args:
-            ingredients_text: Raw ingredients text from analysis
+            ingredients_text: 분석에서 얻은 원본 원재료 텍스트
             
         Returns:
-            List[str]: List of individual ingredients, or None if no ingredients found
+            List[str]: 개별 원재료 목록. 원재료가 없으면 None을 반환합니다.
         """
         if not ingredients_text or ingredients_text == "정보없음":
             return None
         
-        # Split by common delimiters and clean up
+        # 일반적인 구분자로 분리하고 정리합니다
         ingredients = re.split(r'[,，、]', ingredients_text)
         ingredients = [ingredient.strip() for ingredient in ingredients if ingredient.strip()]
         
-        # Remove empty strings and common non-ingredient text
+        # 빈 문자열과 일반적인 비-원재료 텍스트를 제거합니다
         ingredients = [
             ing for ing in ingredients 
             if ing and ing not in ['등', '기타', '정보없음', 'null']
@@ -117,125 +117,126 @@ class AnalysisService:
     
     async def analyze_nutrition_info(self, text: str) -> Dict:
         """
-        Analyze nutrition information from extracted text using Gemini AI.
+        Gemini AI를 사용하여 추출된 텍스트에서 영양 정보를 분석합니다.
         
-        Implements requirements:
-        - 4.1: Send extracted text to Gemini AI for analysis
-        - 4.2: Extract product name, nutrition info, and ingredients
-        - 4.3: Normalize product name
-        - 4.4: Extract nutrition values as number strings without units
-        - 4.5: Use null values for missing nutrition information
+        요구사항 구현:
+        - 4.1: 추출된 텍스트를 Gemini AI로 보내 분석
+        - 4.2: 제품명, 영양 정보, 원재료 추출
+        - 4.3: 제품명 정규화
+        - 4.4: 단위 없이 숫자 문자열로 영양성분 값 추출
+        - 4.5: 누락된 영양 정보에 null 값 사용
         
         Args:
-            text: OCR extracted text from validated images
+            text: 유효성이 검증된 이미지에서 OCR로 추출한 텍스트
             
         Returns:
-            Dict: Analysis result with decodeStatus, product_name, nutrition_info, ingredients, and message
+            Dict: decodeStatus, product_name, nutrition_info, ingredients, message를 포함한 분석 결과
             
         Raises:
-            Exception: If analysis fails due to API errors
+            Exception: API 오류로 분석이 실패할 경우
         """
         if not text or not text.strip():
-            logger.warning("Empty text provided for nutrition analysis")
+            logger.warning("영양 정보 분석에 빈 텍스트가 제공되었습니다")
             return {
                 "decodeStatus": DecodeStatus.FAILED,
                 "product_name": None,
                 "nutrition_info": None,
                 "ingredients": None,
-                "message": "No text provided for analysis"
+                "message": "분석할 텍스트가 제공되지 않았습니다"
             }
         
-        # Create detailed prompt for nutrition analysis matching Spring DB structure
+        # Spring DB 구조와 일치하는 영양 분석을 위한 상세 프롬프트를 생성합니다
         prompt = f"""
-        당신은 대한민국의 식품 라벨 분석 전문가입니다. 
-        주어진 텍스트에서 영양성분 정보를 추출하여 JSON 형식으로 반환해주세요.
-        
-        다음 형식으로 정확히 반환해주세요:
-        {{
-            "analysis_quality": "high|medium|low",
-            "product_name": "제품명 (브랜드명 제외, 제품명만)",
-            "nutrition_info": {{
-                "energy": "칼로리 수치만 (단위 제거)",
-                "carbohydrate": "탄수화물 수치만 (단위 제거)",
-                "sugar": "당류 수치만 (단위 제거)",
-                "dietary_fiber": "식이섬유 수치만 (단위 제거)",
-                "protein": "단백질 수치만 (단위 제거)",
-                "fat": "지방 수치만 (단위 제거)",
-                "sat_fat": "포화지방 수치만 (단위 제거)",
-                "trans_fat": "트랜스지방 수치만 (단위 제거)",
-                "cholesterol": "콜레스테롤 수치만 (단위 제거)",
-                "sodium": "나트륨 수치만 (단위 제거)",
-                "calcium": "칼슘 수치만 (단위 제거)"
-            }},
-            "ingredients": "원재료명 전체 텍스트 (쉼표로 구분된 형태)"
-        }}
-        
-        중요한 규칙:
-        1. 수치는 숫자만 추출하고 단위(g, mg, kcal 등)는 제거
-        2. 정보가 없는 항목은 "정보없음"으로 표시
-        3. analysis_quality는 다음 기준으로 판단:
+        ### 페르소나 (Persona)
+        당신은 식품 영양 성분표를 분석하여 구조화된 데이터로 추출하는 매우 꼼꼼한 AI 전문가입니다. GOOGLE CLOUD VISION API OCR로 인식된 텍스트의 오류나 노이즈를 감안하여 가장 정확한 정보를 추출해야 합니다. ocr의 한계가 있다는 것을 알고, 당신이 직접 판단하여 누락된 정보나 잘못 인식된 부분을 보완할 수 있습니다.
+
+        ### 지시 (Instruction)
+        아래 OCR 텍스트에서 제품명, 영양 정보, 원재료명을 추출하고, 지정된 카테고리에 따라 원재료를 분류하여 최종 결과를 오직 JSON 형식으로만 반환하세요.
+
+        ### 아래는 OCR로 추출한 식품 라벨의 전체 텍스트입니다.
+        {text}
+        ### 제약 조건 (Constraints)
+        1.  **product_name**: 띄어쓰기를 모두 제거한 한글/영문/숫자만 포함된 문자열로 만드세요.
+        2.  **nutrition_info**: 영양성분 값은 단위(g, mg, kcal 등)를 완벽히 제거하고 **숫자와 소수점자리가 포함된 문자열**로 추출하세요. 만약 해당하는 영양성분이 텍스트에 없으면, 값으로 `null`을 사용하세요.
+        3.  원재료명 추출: '원재료명:' 다음에 나오는 모든 성분을 추출하여 리스트로 만드세요. 괄호 안의 원산지나 세부 정보는 제외하고 핵심 원재료명만 포함하세요.
+        4. analysis_quality는 다음 기준으로 판단:
            - high: 대부분의 영양성분 정보가 명확하게 추출 가능
            - medium: 일부 영양성분 정보가 불분명하거나 누락
            - low: 텍스트가 흐리거나 대부분의 정보 추출 불가
-        4. 제품명은 브랜드명을 제외하고 실제 제품명만 추출
-        5. 원재료명은 전체 텍스트를 그대로 반환 (후처리에서 분리)
-        
-        분석할 텍스트:
-        ---
-        {text}
-        ---
-        
+        ### 예시 (Few-shot Example)
+        #### 텍스트 입력 예시:
+        "제품명: 돌아온 로켓단 초코롤 원재료명: 밀가루(밀:미국산), 백설탕, 전란액(계란:국산), 가공버터(우유), 쇼트닝(대두), 전지분유, 코코아분말, 합성향료 영양정보 총 내용량 85g 278kcal 나트륨 140mg 탄수화물 43g 당류 26g 지방 10g 포화지방 6g 단백질 4g
+        ```json
+        {{
+            "product_name": "돌아온로켓단초코롤",
+            "nutrition_info": {{
+            "energy": "278",
+            "carbohydrate": "140",
+            "sugar": "43",
+            "dietary_fiber": "26",
+            "protein": "4",
+            "fat": "10",
+            "sat_fat": "10",
+            "trans_fat": null,
+            "cholesterol": "0.6",
+            "sodium": null,
+            "calcium": null,
+        }},
+        "ingredients": "밀가루", "백설탕", "전란액", "가공버터", "쇼트닝", "전지분유", "코코아분말", "합성향료"
+        }}
+        ```
+
         JSON 응답만 반환하고 다른 설명은 포함하지 마세요.
         """
         
         try:
-            logger.debug(f"Analyzing nutrition info with text length: {len(text)}")
+            logger.debug(f"텍스트 길이 {len(text)}로 영양 정보 분석 중")
             response = await self.model.generate_content_async(prompt)
             response_text = response.text.strip()
             
-            # Parse JSON response (handle markdown code blocks)
+            # JSON 응답을 파싱합니다 (마크다운 코드 블록 처리)
             try:
-                # Remove markdown code blocks if present
+                # 마크다운 코드 블록이 있는 경우 제거합니다
                 clean_response = response_text.strip()
                 if clean_response.startswith('```json'):
-                    clean_response = clean_response[7:]  # Remove ```json
+                    clean_response = clean_response[7:]  # ```json 제거
                 if clean_response.endswith('```'):
-                    clean_response = clean_response[:-3]  # Remove ```
+                    clean_response = clean_response[:-3]  # ``` 제거
                 clean_response = clean_response.strip()
                 
                 analysis_result = json.loads(clean_response)
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON response: {e}")
-                logger.error(f"Raw response: {response_text}")
+                logger.error(f"JSON 응답 파싱 실패: {e}")
+                logger.error(f"원본 응답: {response_text}")
                 return {
                     "decodeStatus": DecodeStatus.FAILED,
                     "product_name": None,
                     "nutrition_info": None,
                     "ingredients": None,
-                    "message": "Failed to parse analysis response"
+                    "message": "분석 응답 파싱에 실패했습니다"
                 }
             
-            # Determine decode status based on analysis quality
+            # 분석 품질에 따라 decode 상태를 결정합니다
             analysis_quality = analysis_result.get('analysis_quality', 'low')
             if analysis_quality == 'low':
                 decode_status = DecodeStatus.FAILED
-                message = "Image quality too low for accurate analysis"
+                message = "이미지 품질이 낮아 정확한 분석이 어렵습니다"
             elif analysis_quality == 'medium':
                 decode_status = DecodeStatus.COMPLETED
-                message = "Analysis completed with some missing information"
-            else:  # high quality
+                message = "일부 정보가 누락된 채로 분석이 완료되었습니다"
+            else:  # 높은 품질
                 decode_status = DecodeStatus.COMPLETED
-                message = "Analysis completed successfully"
+                message = "분석이 성공적으로 완료되었습니다"
             
-            # Extract and normalize product name
+            # 제품명을 추출하고 정규화합니다
             raw_product_name = analysis_result.get('product_name', '')
             normalized_product_name = self._normalize_product_name(raw_product_name) if raw_product_name != "정보없음" else None
             
-            # Extract nutrition information
+            # 영양 정보를 추출합니다
             nutrition_data = analysis_result.get('nutrition_info', {})
             nutrition_info = self._extract_nutrition_values(nutrition_data)
             
-            # Parse ingredients
+            # 원재료를 파싱합니다
             ingredients_text = analysis_result.get('ingredients', '')
             ingredients = self._parse_ingredients(ingredients_text) if ingredients_text != "정보없음" else None
             
@@ -247,11 +248,11 @@ class AnalysisService:
                 "message": message
             }
             
-            logger.info(f"Nutrition analysis completed with status: {decode_status}")
-            logger.debug(f"Analysis result: {result}")
+            logger.info(f"영양 정보 분석 완료, 상태: {decode_status}")
+            logger.debug(f"분석 결과: {result}")
             
             return result
             
         except Exception as e:
-            logger.error(f"Error during nutrition analysis: {e}")
-            raise Exception(f"Nutrition analysis failed: {str(e)}")
+            logger.error(f"영양 정보 분석 중 오류 발생: {e}")
+            raise Exception(f"영양 정보 분석 실패: {str(e)}")
