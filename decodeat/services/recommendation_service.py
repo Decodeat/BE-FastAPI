@@ -1,5 +1,5 @@
 """
-Recommendation service for generating personalized product recommendations.
+개인화된 제품 추천을 생성하는 추천 서비스
 """
 from typing import List, Dict, Any, Optional
 import numpy as np
@@ -12,9 +12,9 @@ logger = LoggingService(__name__)
 
 
 class RecommendationService:
-    """Service for generating personalized recommendations based on user behavior."""
+    """사용자 행동 기반 개인화 추천을 생성하는 서비스"""
     
-    # Behavior weights as defined in requirements
+    # 사용자 행동별 가중치 (요구사항에 따라 정의됨)
     BEHAVIOR_WEIGHTS = {
         'REGISTER': 5,  # 직접 등록 = 가장 강한 관심
         'LIKE': 3,      # 좋아요 = 선호
@@ -24,10 +24,10 @@ class RecommendationService:
     
     def __init__(self, vector_service: VectorService):
         """
-        Initialize recommendation service.
+        추천 서비스를 초기화합니다.
         
         Args:
-            vector_service: Vector service instance for similarity search
+            vector_service: 유사도 검색을 위한 벡터 서비스 인스턴스
         """
         self.vector_service = vector_service
         
@@ -36,13 +36,19 @@ class RecommendationService:
         behavior_data: List[Dict[str, Any]]
     ) -> Optional[List[float]]:
         """
-        Generate user preference vector based on behavior data.
+        사용자 행동 데이터를 기반으로 사용자 선호도 벡터를 생성합니다.
+        
+        동작 방식:
+        1. 사용자가 상호작용한 각 제품의 벡터를 ChromaDB에서 가져옴
+        2. 행동 유형별 가중치를 적용 (REGISTER=5, LIKE=3, SEARCH=2, VIEW=1)
+        3. 가중 평균을 계산하여 사용자의 전체적인 선호도를 나타내는 벡터 생성
+        4. 이 벡터는 사용자가 좋아할 만한 제품을 찾는데 사용됨
         
         Args:
-            behavior_data: List of user behavior records
+            behavior_data: 사용자 행동 기록 리스트 (제품ID, 행동유형, 시간 포함)
             
         Returns:
-            User preference vector or None if insufficient data
+            사용자 선호도 벡터 (384차원) 또는 데이터 부족시 None
         """
         try:
             if not behavior_data:
@@ -105,15 +111,21 @@ class RecommendationService:
         limit: int = 20
     ) -> List[Dict[str, Any]]:
         """
-        Get personalized recommendations based on user behavior.
+        사용자 행동 기반 개인화 추천을 생성합니다.
+        
+        추천 알고리즘:
+        1. 사용자 선호도 벡터 생성 (과거 행동 기반)
+        2. ChromaDB에서 유사한 제품들을 벡터 검색으로 찾기
+        3. 이미 상호작용한 제품들은 제외
+        4. 유사도 점수와 추천 이유를 포함한 결과 반환
         
         Args:
-            user_id: User identifier
-            behavior_data: User's behavior history
-            limit: Maximum number of recommendations
+            user_id: 사용자 식별자
+            behavior_data: 사용자의 행동 이력 (좋아요, 검색, 조회 등)
+            limit: 최대 추천 개수
             
         Returns:
-            List of recommended products with scores and reasons
+            추천 제품 리스트 (제품ID, 유사도 점수, 추천 이유 포함)
         """
         try:
             logger.info(f"Generating user-based recommendations for user {user_id}")
@@ -159,14 +171,20 @@ class RecommendationService:
         limit: int = 15
     ) -> List[Dict[str, Any]]:
         """
-        Get recommendations based on product similarity.
+        제품 유사도 기반 추천을 생성합니다.
+        
+        추천 알고리즘:
+        1. 기준 제품의 벡터를 ChromaDB에서 가져옴
+        2. 벡터 유사도 검색으로 비슷한 제품들을 찾음
+        3. 영양성분, 원재료가 유사한 제품들이 높은 점수를 받음
+        4. 유사도 점수에 따라 추천 이유를 자동 생성
         
         Args:
-            product_id: Reference product ID
-            limit: Maximum number of recommendations
+            product_id: 기준이 되는 제품 ID
+            limit: 최대 추천 개수
             
         Returns:
-            List of similar products with scores and reasons
+            유사한 제품 리스트 (제품ID, 유사도 점수, 추천 이유 포함)
         """
         try:
             logger.info(f"Generating product-based recommendations for product {product_id}")
@@ -229,13 +247,19 @@ class RecommendationService:
         
     def analyze_user_behavior_patterns(self, behavior_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Analyze user behavior patterns and preferences.
+        사용자 행동 패턴과 선호도를 분석합니다.
+        
+        분석 내용:
+        1. 행동 유형별 빈도 계산 (좋아요, 검색, 조회 등)
+        2. 총 참여도 점수 계산 (가중치 적용)
+        3. 평균 참여도와 가장 많이 하는 행동 파악
+        4. 참여 수준 분류 (매우높음/높음/보통/낮음/없음)
         
         Args:
-            behavior_data: User's behavior history
+            behavior_data: 사용자의 행동 이력
             
         Returns:
-            Dictionary containing behavior analysis
+            행동 분석 결과 (총 상호작용 수, 행동 분포, 참여 수준 등)
         """
         try:
             if not behavior_data:
@@ -386,14 +410,18 @@ class RecommendationService:
         
     async def get_fallback_recommendations(self, limit: int = 10) -> List[Dict[str, Any]]:
         """
-        Get fallback recommendations when user data is insufficient.
-        This could be based on popularity or recent products.
+        사용자 데이터가 부족할 때 대체 추천을 제공합니다.
+        
+        대체 추천 방식:
+        1. ChromaDB에 저장된 제품들 중에서 무작위로 선택
+        2. 실제 서비스에서는 인기도나 최신 제품 기준으로 개선 가능
+        3. 모든 추천에 중립적인 점수(0.5)와 "인기 제품" 라벨 부여
         
         Args:
-            limit: Maximum number of recommendations
+            limit: 최대 추천 개수
             
         Returns:
-            List of fallback recommendations
+            대체 추천 제품 리스트
         """
         try:
             logger.info("Generating fallback recommendations")
@@ -439,14 +467,26 @@ class RecommendationService:
         user_behavior_analysis: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Evaluate the quality of recommendations.
+        추천 품질을 평가합니다.
+        
+        평가 기준:
+        1. 추천 개수 (많을수록 좋음)
+        2. 평균 유사도 점수 (높을수록 좋음)
+        3. 사용자 참여도 (높을수록 좋음)
+        4. 사용자 상호작용 횟수 (많을수록 좋음)
+        
+        품질 등급:
+        - excellent: 높은 유사도 + 많은 추천 + 높은 사용자 참여도
+        - good: 적당한 유사도 + 충분한 추천 + 보통 사용자 참여도
+        - fair: 낮은 유사도 또는 적은 추천
+        - poor: 매우 낮은 품질 또는 추천 없음
         
         Args:
-            recommendations: List of recommendations
-            user_behavior_analysis: User behavior analysis results
+            recommendations: 추천 결과 리스트
+            user_behavior_analysis: 사용자 행동 분석 결과 (선택사항)
             
         Returns:
-            Quality rating: excellent, good, fair, poor
+            품질 등급: excellent, good, fair, poor
         """
         try:
             if not recommendations:

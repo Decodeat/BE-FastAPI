@@ -360,9 +360,10 @@ class VectorService:
                 if nutrition.get('sodium'):
                     metadata['sodium'] = float(nutrition['sodium'])
                     
-            # Add main ingredients to metadata
+            # Add main ingredients to metadata (as string)
             if product_data.get('ingredients'):
-                metadata['main_ingredients'] = product_data['ingredients'][:3]  # First 3 ingredients
+                main_ingredients = product_data['ingredients'][:3]  # First 3 ingredients
+                metadata['main_ingredients'] = ', '.join(main_ingredients) if main_ingredients else ''
                 
             # Store in ChromaDB
             self.collection.add(

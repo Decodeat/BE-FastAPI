@@ -90,22 +90,27 @@ class AnalysisService:
         logger.debug(f"추출된 영양성분 값: {nutrition_info}")
         return nutrition_info
     
-    def _parse_ingredients(self, ingredients_text: str) -> Optional[List[str]]:
+    def _parse_ingredients(self, ingredients_data) -> Optional[List[str]]:
         """
-        원재료 텍스트를 파싱하여 개별 원재료 목록으로 만듭니다.
+        원재료 데이터를 파싱하여 개별 원재료 목록으로 만듭니다.
         
         Args:
-            ingredients_text: 분석에서 얻은 원본 원재료 텍스트
+            ingredients_data: 분석에서 얻은 원재료 데이터 (문자열 또는 리스트)
             
         Returns:
             List[str]: 개별 원재료 목록. 원재료가 없으면 None을 반환합니다.
         """
-        if not ingredients_text or ingredients_text == "정보없음":
+        if not ingredients_data or ingredients_data == "정보없음":
             return None
         
-        # 일반적인 구분자로 분리하고 정리합니다
-        ingredients = re.split(r'[,，、]', ingredients_text)
-        ingredients = [ingredient.strip() for ingredient in ingredients if ingredient.strip()]
+        # 이미 리스트인 경우 그대로 사용
+        if isinstance(ingredients_data, list):
+            ingredients = [str(item).strip() for item in ingredients_data if item and str(item).strip()]
+        else:
+            # 문자열인 경우 구분자로 분리
+            ingredients_text = str(ingredients_data)
+            ingredients = re.split(r'[,，、]', ingredients_text)
+            ingredients = [ingredient.strip() for ingredient in ingredients if ingredient.strip()]
         
         # 빈 문자열과 일반적인 비-원재료 텍스트를 제거합니다
         ingredients = [
@@ -158,7 +163,7 @@ class AnalysisService:
         ### 제약 조건 (Constraints)
         1.  **product_name**: 띄어쓰기를 모두 제거한 한글/영문/숫자만 포함된 문자열로 만드세요.
         2.  **nutrition_info**: 영양성분 값은 단위(g, mg, kcal 등)를 완벽히 제거하고 **숫자와 소수점자리가 포함된 문자열**로 추출하세요. 만약 해당하는 영양성분이 텍스트에 없으면, 값으로 `null`을 사용하세요.
-        3.  원재료명 추출: '원재료명:' 다음에 나오는 모든 성분을 추출하여 리스트로 만드세요. 괄호 안의 원산지나 세부 정보는 제외하고 핵심 원재료명만 포함하세요.
+        3.  원재료명 추출: '원재료명:' 다음에 나오는 모든 성분을 쉼표로 구분된 문자열로 만드세요. 괄호 안의 원산지나 세부 정보는 제외하고 핵심 원재료명만 포함하세요.
         4. analysis_quality는 다음 기준으로 판단:
            - high: 대부분의 영양성분 정보가 명확하게 추출 가능
            - medium: 일부 영양성분 정보가 불분명하거나 누락
@@ -182,7 +187,7 @@ class AnalysisService:
             "sodium": null,
             "calcium": null,
         }},
-        "ingredients": "밀가루", "백설탕", "전란액", "가공버터", "쇼트닝", "전지분유", "코코아분말", "합성향료"
+        "ingredients": "밀가루, 백설탕, 전란액, 가공버터, 쇼트닝, 전지분유, 코코아분말, 합성향료"
         }}
         ```
 
@@ -198,16 +203,22 @@ class AnalysisService:
             try:
                 # 마크다운 코드 블록이 있는 경우 제거합니다
                 clean_response = response_text.strip()
+                logger.info(f"Gemini AI 원본 응답 길이: {len(response_text)}자")
+                logger.debug(f"Gemini AI 원본 응답: {response_text[:500]}...")
+                
                 if clean_response.startswith('```json'):
                     clean_response = clean_response[7:]  # ```json 제거
                 if clean_response.endswith('```'):
                     clean_response = clean_response[:-3]  # ``` 제거
                 clean_response = clean_response.strip()
                 
+                logger.info(f"정리된 JSON 응답 길이: {len(clean_response)}자")
                 analysis_result = json.loads(clean_response)
+                logger.info(f"JSON 파싱 성공 - 키: {list(analysis_result.keys())}")
             except json.JSONDecodeError as e:
                 logger.error(f"JSON 응답 파싱 실패: {e}")
                 logger.error(f"원본 응답: {response_text}")
+                logger.error(f"정리된 응답: {clean_response}")
                 return {
                     "decodeStatus": DecodeStatus.FAILED,
                     "product_name": None,
@@ -216,17 +227,37 @@ class AnalysisService:
                     "message": "분석 응답 파싱에 실패했습니다"
                 }
             
-            # 분석 품질에 따라 decode 상태를 결정합니다
-            analysis_quality = analysis_result.get('analysis_quality', 'low')
-            if analysis_quality == 'low':
+            # 분석 품질에 따라 decode 상태를 결정합니다 (더 관대하게)
+            analysis_quality = analysis_result.get('analysis_quality', 'medium')
+            logger.info(f"Gemini AI 분석 품질: {analysis_quality}")
+            
+            # 제품명이나 영양정보가 하나라도 있으면 성공으로 처리
+            raw_product_name = analysis_result.get('product_name', '')
+            raw_nutrition = analysis_result.get('nutrition_info', {})
+            raw_ingredients = analysis_result.get('ingredients', '')
+            
+            has_product_name = raw_product_name and raw_product_name != "정보없음"
+            has_nutrition = raw_nutrition and any(v for v in raw_nutrition.values() if v and v != "null")
+            has_ingredients = raw_ingredients and raw_ingredients != "정보없음"
+            
+            logger.info(f"추출된 데이터 확인:")
+            logger.info(f"  - 제품명: '{raw_product_name}' (유효: {has_product_name})")
+            logger.info(f"  - 영양정보: {raw_nutrition} (유효: {has_nutrition})")
+            logger.info(f"  - 원재료: '{raw_ingredients}' (유효: {has_ingredients})")
+            
+            if has_product_name or has_nutrition or has_ingredients:
+                decode_status = DecodeStatus.COMPLETED
+                if analysis_quality == 'low':
+                    message = "일부 정보가 추출되었습니다"
+                elif analysis_quality == 'medium':
+                    message = "일부 정보가 누락된 채로 분석이 완료되었습니다"
+                else:  # 높은 품질
+                    message = "분석이 성공적으로 완료되었습니다"
+                logger.info(f"분석 성공 - 상태: {decode_status}, 메시지: {message}")
+            else:
                 decode_status = DecodeStatus.FAILED
-                message = "이미지 품질이 낮아 정확한 분석이 어렵습니다"
-            elif analysis_quality == 'medium':
-                decode_status = DecodeStatus.COMPLETED
-                message = "일부 정보가 누락된 채로 분석이 완료되었습니다"
-            else:  # 높은 품질
-                decode_status = DecodeStatus.COMPLETED
-                message = "분석이 성공적으로 완료되었습니다"
+                message = "이미지에서 영양 정보를 추출할 수 없습니다"
+                logger.warning(f"분석 실패 - 추출된 데이터가 없음")
             
             # 제품명을 추출하고 정규화합니다
             raw_product_name = analysis_result.get('product_name', '')
@@ -237,8 +268,8 @@ class AnalysisService:
             nutrition_info = self._extract_nutrition_values(nutrition_data)
             
             # 원재료를 파싱합니다
-            ingredients_text = analysis_result.get('ingredients', '')
-            ingredients = self._parse_ingredients(ingredients_text) if ingredients_text != "정보없음" else None
+            ingredients_data = analysis_result.get('ingredients', '')
+            ingredients = self._parse_ingredients(ingredients_data) if ingredients_data != "정보없음" else None
             
             result = {
                 "decodeStatus": decode_status,
@@ -249,7 +280,12 @@ class AnalysisService:
             }
             
             logger.info(f"영양 정보 분석 완료, 상태: {decode_status}")
-            logger.debug(f"분석 결과: {result}")
+            logger.info(f"최종 결과 요약:")
+            logger.info(f"  - 상태: {decode_status}")
+            logger.info(f"  - 제품명: '{normalized_product_name}'")
+            logger.info(f"  - 영양정보 필드 수: {len([k for k, v in nutrition_info.dict().items() if v]) if nutrition_info else 0}")
+            logger.info(f"  - 원재료 수: {len(ingredients) if ingredients else 0}")
+            logger.info(f"  - 메시지: {message}")
             
             return result
             

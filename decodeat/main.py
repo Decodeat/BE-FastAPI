@@ -18,6 +18,7 @@ if os.path.basename(os.getcwd()) == "decodeat":
 from decodeat.config import settings
 from decodeat.api.routes import router as api_router
 from decodeat.api.recommendation_routes import recommendation_router
+from decodeat.api.recommendation_routes import recommendation_router
 
 
 def create_app() -> FastAPI:
