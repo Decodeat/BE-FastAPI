@@ -29,6 +29,12 @@ class AnalyzeRequest(BaseModel):
         example=["https://example.com/nutrition-label.jpg"]
     )
     
+    product_id: Optional[int] = Field(
+        None,
+        description="Product ID from Spring server for vector storage",
+        example=12345
+    )
+    
     @validator('image_urls')
     def validate_image_urls(cls, v):
         """Validate that URLs are properly formatted."""
@@ -188,6 +194,14 @@ class ProductBasedRecommendationRequest(BaseModel):
     )
 
 
+class NutritionRatios(BaseModel):
+    """영양소 구성비 (탄단지 비율)"""
+    carbohydrate_ratio: float = Field(..., description="탄수화물 비율 (%)", ge=0.0, le=100.0)
+    protein_ratio: float = Field(..., description="단백질 비율 (%)", ge=0.0, le=100.0)
+    fat_ratio: float = Field(..., description="지방 비율 (%)", ge=0.0, le=100.0)
+    total_calories: float = Field(..., description="총 칼로리 (kcal)", ge=0.0)
+
+
 class RecommendationResult(BaseModel):
     """Individual recommendation result."""
     
@@ -202,6 +216,32 @@ class RecommendationResult(BaseModel):
         ..., 
         description="Explanation for why this product was recommended",
         example="사용자가 좋아요한 제품과 유사한 영양성분"
+    )
+
+
+class EnhancedRecommendationResult(RecommendationResult):
+    """확장된 추천 결과 (영양소 유사도와 원재료 유사도 포함)"""
+    
+    nutrition_similarity: Optional[float] = Field(
+        None, 
+        description="영양소 구성비 유사도 (0-1)",
+        ge=0.0,
+        le=1.0
+    )
+    ingredient_similarity: Optional[float] = Field(
+        None, 
+        description="원재료 유사도 (0-1)",
+        ge=0.0,
+        le=1.0
+    )
+    nutrition_ratios: Optional[NutritionRatios] = Field(
+        None, 
+        description="추천 상품의 영양소 구성비"
+    )
+    main_ingredients: Optional[List[str]] = Field(
+        None, 
+        description="추천 상품의 주요 원재료 (상위 5개)",
+        example=["밀가루", "설탕", "버터", "계란", "우유"]
     )
 
 
@@ -264,3 +304,28 @@ class RecommendationErrorResponse(BaseModel):
         description="Whether fallback recommendations are available",
         example=True
     )
+
+
+# Test API Models
+class DirectInsertRequest(BaseModel):
+    """Direct product insertion request for testing"""
+    
+    product_id: int = Field(..., description="Product ID")
+    product_name: str = Field(..., description="Product name")
+    nutrition_info: Optional[NutritionInfo] = Field(None, description="Nutrition information")
+    ingredients: Optional[List[str]] = Field(None, description="List of ingredients")
+
+
+class ProductQueryResponse(BaseModel):
+    """Product query response"""
+    
+    found: bool = Field(..., description="Whether product was found")
+    product_data: Optional[Dict[str, Any]] = Field(None, description="Product data if found")
+
+
+class DatabaseOperationResponse(BaseModel):
+    """Database operation response"""
+    
+    success: bool = Field(..., description="Operation success status")
+    message: str = Field(..., description="Operation result message")
+    details: Optional[Dict[str, Any]] = Field(None, description="Additional details")

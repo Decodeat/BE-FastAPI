@@ -21,6 +21,7 @@ Pillow==10.4.0
 numpy>=1.21.0,<2.0.0
 chromadb==0.4.24
 sentence-transformers==2.7.0
+scikit-learn>=1.3.0
 
 # Core Python utilities
 PyYAML==6.0.2

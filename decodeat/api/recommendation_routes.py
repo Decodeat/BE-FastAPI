@@ -10,9 +10,11 @@ from decodeat.api.models import (
     ProductBasedRecommendationRequest,
     RecommendationResponse,
     RecommendationResult,
+    EnhancedRecommendationResult,
+    NutritionRatios,
     ErrorResponse
 )
-from decodeat.services.vector_service import VectorService
+from decodeat.services.enhanced_vector_service import EnhancedVectorService
 from decodeat.services.recommendation_service import RecommendationService
 from decodeat.utils.logging import LoggingService
 from decodeat.config import settings
@@ -23,9 +25,9 @@ logger = LoggingService(__name__)
 recommendation_router = APIRouter()
 
 
-async def get_vector_service() -> VectorService:
-    """Dependency to get vector service instance."""
-    vector_service = VectorService(
+async def get_vector_service() -> EnhancedVectorService:
+    """Dependency to get enhanced vector service instance."""
+    vector_service = EnhancedVectorService(
         chroma_host=settings.chroma_host,
         chroma_port=settings.chroma_port
     )
@@ -44,7 +46,7 @@ async def get_vector_service() -> VectorService:
 )
 async def get_user_based_recommendations(
     request: UserBasedRecommendationRequest,
-    vector_service: VectorService = Depends(get_vector_service)
+    vector_service: EnhancedVectorService = Depends(get_vector_service)
 ):
     """
     Generate personalized recommendations based on user behavior.
@@ -208,7 +210,7 @@ async def get_user_based_recommendations(
 )
 async def get_product_based_recommendations(
     request: ProductBasedRecommendationRequest,
-    vector_service: VectorService = Depends(get_vector_service)
+    vector_service: EnhancedVectorService = Depends(get_vector_service)
 ):
     """
     Generate recommendations based on product similarity.
@@ -236,15 +238,45 @@ async def get_product_based_recommendations(
             limit=request.limit
         )
         
-        # Convert to response format
-        recommendation_results = [
-            RecommendationResult(
-                product_id=rec['product_id'],
-                similarity_score=rec['similarity_score'],
-                recommendation_reason=rec['recommendation_reason']
-            )
-            for rec in recommendations
-        ]
+        # Get collection info for debugging
+        collection_info = await vector_service.get_collection_info()
+        total_products_in_db = collection_info.get('count', 0)
+        
+        logger.debug(f"Total products in DB: {total_products_in_db}, "
+                    f"Requested limit: {request.limit}, "
+                    f"Actual recommendations: {len(recommendations)}")
+        
+        # Convert to enhanced response format
+        recommendation_results = []
+        for rec in recommendations:
+            # Check if this is an enhanced recommendation with nutrition/ingredient data
+            if 'nutrition_similarity' in rec and 'ingredient_similarity' in rec:
+                # Create enhanced result with nutrition ratios
+                nutrition_ratios = None
+                if rec.get('nutrition_ratios'):
+                    nutrition_ratios = NutritionRatios(
+                        carbohydrate_ratio=rec['nutrition_ratios'].get('carbohydrate_ratio', 0),
+                        protein_ratio=rec['nutrition_ratios'].get('protein_ratio', 0),
+                        fat_ratio=rec['nutrition_ratios'].get('fat_ratio', 0),
+                        total_calories=rec['nutrition_ratios'].get('total_calories', 0)
+                    )
+                
+                recommendation_results.append(EnhancedRecommendationResult(
+                    product_id=rec['product_id'],
+                    similarity_score=rec['similarity_score'],
+                    recommendation_reason=rec['recommendation_reason'],
+                    nutrition_similarity=rec.get('nutrition_similarity'),
+                    ingredient_similarity=rec.get('ingredient_similarity'),
+                    nutrition_ratios=nutrition_ratios,
+                    main_ingredients=rec.get('main_ingredients', [])
+                ))
+            else:
+                # Fallback to basic result for compatibility
+                recommendation_results.append(RecommendationResult(
+                    product_id=rec['product_id'],
+                    similarity_score=rec['similarity_score'],
+                    recommendation_reason=rec['recommendation_reason']
+                ))
         
         # Evaluate recommendation quality
         data_quality = recommendation_service.evaluate_recommendation_quality(recommendations)
@@ -279,6 +311,10 @@ async def get_product_based_recommendations(
                 message = "유사한 제품들을 추천합니다"
             else:
                 message = "관련 제품들을 추천합니다"
+                
+            # Add context about available vs requested count
+            if len(recommendations) < request.limit and total_products_in_db <= request.limit:
+                message += f" (DB에 총 {total_products_in_db}개 제품 중 {len(recommendations)}개 추천)"
         
         response = RecommendationResponse(
             recommendations=recommendation_results,
@@ -289,7 +325,13 @@ async def get_product_based_recommendations(
             message=message
         )
         
-        logger.info(f"Generated {len(recommendation_results)} {recommendation_type} recommendations for product {request.product_id} (quality: {data_quality})")
+        # Log information about the result count
+        if len(recommendation_results) < request.limit:
+            logger.info(f"Generated {len(recommendation_results)} {recommendation_type} recommendations for product {request.product_id} "
+                       f"(requested: {request.limit}, available: {len(recommendation_results)}, quality: {data_quality})")
+        else:
+            logger.info(f"Generated {len(recommendation_results)} {recommendation_type} recommendations for product {request.product_id} (quality: {data_quality})")
+        
         return response
         
     except ValueError as e:

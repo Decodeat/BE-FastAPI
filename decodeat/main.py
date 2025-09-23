@@ -18,7 +18,11 @@ if os.path.basename(os.getcwd()) == "decodeat":
 from decodeat.config import settings
 from decodeat.api.routes import router as api_router
 from decodeat.api.recommendation_routes import recommendation_router
-from decodeat.api.recommendation_routes import recommendation_router
+from decodeat.api.test_routes import test_router
+from decodeat.utils.model_cache import model_cache
+from decodeat.utils.logging import LoggingService
+
+logger = LoggingService(__name__)
 
 
 def create_app() -> FastAPI:
@@ -33,6 +37,20 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json"
     )
     
+    # Pre-load sentence transformer model on startup
+    @app.on_event("startup")
+    async def startup_event():
+        """Pre-load models on application startup"""
+        try:
+            logger.info("Pre-loading sentence transformer model...")
+            model = model_cache.get_model()
+            if model:
+                logger.info("Model pre-loaded successfully")
+            else:
+                logger.warning("Failed to pre-load model")
+        except Exception as e:
+            logger.error(f"Error pre-loading model: {e}")
+    
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -45,6 +63,7 @@ def create_app() -> FastAPI:
     # Include API routes
     app.include_router(api_router, prefix="/api/v1")
     app.include_router(recommendation_router, prefix="/api/v1/recommend")
+    app.include_router(test_router, prefix="/api/v1/test")
     
     # Health check endpoint
     @app.get("/health")

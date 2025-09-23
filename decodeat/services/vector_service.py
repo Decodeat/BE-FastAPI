@@ -9,6 +9,8 @@ import numpy as np
 
 from decodeat.utils.logging import LoggingService
 from decodeat.utils.performance import measure_time, VectorSearchOptimizer
+from decodeat.utils.model_cache import model_cache
+from decodeat.utils.model_optimization import optimize_model_loading
 
 logger = LoggingService(__name__)
 
@@ -42,10 +44,17 @@ class VectorService:
     async def initialize(self):
         """Initialize ChromaDB client and sentence transformer model."""
         try:
-            # Initialize sentence transformer model first (always needed)
-            logger.info("Loading sentence transformer model...")
-            self.model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-            logger.info("Sentence transformer model loaded successfully")
+            # Use cached sentence transformer model
+            if model_cache.is_model_loaded():
+                logger.info("Using cached sentence transformer model")
+                self.model = model_cache.get_model()
+            else:
+                logger.info("Loading sentence transformer model...")
+                self.model = model_cache.get_model()
+                if self.model:
+                    logger.info("Sentence transformer model loaded successfully")
+                else:
+                    raise RuntimeError("Failed to load sentence transformer model")
             
             # Try to initialize ChromaDB client
             try:
@@ -419,6 +428,8 @@ class VectorService:
                 include=['metadatas', 'distances']
             )
             
+            logger.debug(f"ChromaDB returned {len(similar_results['metadatas'][0])} results for product {product_id}")
+            
             similar_products = []
             for i, (metadata, distance) in enumerate(zip(
                 similar_results['metadatas'][0],
@@ -426,6 +437,7 @@ class VectorService:
             )):
                 # Skip the reference product itself
                 if metadata['product_id'] == product_id:
+                    logger.debug(f"Skipping reference product {product_id} from similarity results")
                     continue
                     
                 # Convert distance to similarity score (0-1, higher is more similar)
@@ -439,6 +451,9 @@ class VectorService:
                     )
                 })
                 
+            logger.info(f"Found {len(similar_products)} similar products for product {product_id} (requested limit: {limit})")
+            
+            # Return results (may be less than limit if DB has fewer products)
             return similar_products[:limit]
             
         except Exception as e:

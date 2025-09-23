@@ -10,7 +10,7 @@ from decodeat.services.image_download_service import ImageDownloadService
 from decodeat.services.ocr_service import OCRService
 from decodeat.services.validation_service import ValidationService
 from decodeat.services.analysis_service import AnalysisService
-from decodeat.services.vector_service import VectorService
+from decodeat.services.enhanced_vector_service import EnhancedVectorService
 from decodeat.utils.logging import LoggingService
 from decodeat.config import settings
 
@@ -36,12 +36,12 @@ async def analyze_nutrition_label(request: AnalyzeRequest):
     - 1.5: Return JSON response with nutrition data and status information
     
     Args:
-        request: AnalyzeRequest containing image URLs
+        request: AnalyzeRequest containing image URLs and optional product_id
         
     Returns:
         AnalyzeResponse with structured nutrition data and processing status
     """
-    logger.info(f"Starting nutrition analysis for {len(request.image_urls)} image(s)")
+    logger.info(f"Starting nutrition analysis for {len(request.image_urls)} image(s), product_id: {request.product_id}")
     
     # Initialize services
     image_service = ImageDownloadService()
@@ -165,7 +165,7 @@ async def analyze_nutrition_label(request: AnalyzeRequest):
                 
                 # Auto-generate and store vector if analysis was successful
                 if response.decodeStatus == DecodeStatus.COMPLETED:
-                    await _auto_generate_product_vector(response)
+                    await _auto_generate_product_vector(response, request.product_id)
                 
                 return response
                 
@@ -190,7 +190,7 @@ async def analyze_nutrition_label(request: AnalyzeRequest):
         )
 
 
-async def _auto_generate_product_vector(analysis_result: AnalyzeResponse):
+async def _auto_generate_product_vector(analysis_result: AnalyzeResponse, product_id: int = None):
     """
     Automatically generate and store product vector after successful analysis.
     
@@ -199,6 +199,7 @@ async def _auto_generate_product_vector(analysis_result: AnalyzeResponse):
     
     Args:
         analysis_result: The successful analysis result
+        product_id: Product ID from Spring server for vector storage
     """
     try:
         # Only proceed if we have sufficient data for vector generation
@@ -206,10 +207,31 @@ async def _auto_generate_product_vector(analysis_result: AnalyzeResponse):
             logger.debug("Insufficient data for vector generation - skipping")
             return
             
-        logger.info(f"Auto-generating vector for product: {analysis_result.product_name or 'Unknown Product'}")
+        # Check if product_id is provided from Spring server
+        if product_id is None:
+            # Generate a deterministic fallback ID based on content
+            import hashlib
+            import json
+            
+            logger.info("No product_id provided from Spring server - generating fallback ID for vector storage")
+            
+            # Create a consistent hash based on product data
+            content_for_hash = {
+                'name': analysis_result.product_name or 'Unknown Product',
+                'nutrition': sorted(product_data['nutrition_info'].items()) if product_data.get('nutrition_info') else [],
+                'ingredients': sorted(product_data['ingredients']) if product_data.get('ingredients') else []
+            }
+            content_str = json.dumps(content_for_hash, sort_keys=True)
+            product_id = int(hashlib.md5(content_str.encode()).hexdigest()[:8], 16)
+            
+            logger.debug(f"Generated fallback product ID: {product_id} for vector storage")
+        else:
+            logger.debug(f"Using product ID from Spring server: {product_id} for vector storage")
+            
+        logger.info(f"Auto-generating vector for product: {analysis_result.product_name or 'Unknown Product'} (ID: {product_id})")
         
-        # Initialize vector service
-        vector_service = VectorService(
+        # Initialize enhanced vector service
+        vector_service = EnhancedVectorService(
             chroma_host=settings.chroma_host,
             chroma_port=settings.chroma_port
         )
@@ -245,32 +267,28 @@ async def _auto_generate_product_vector(analysis_result: AnalyzeResponse):
                             
                 product_data['nutrition_info'] = nutrition_dict
             
-            # Generate a deterministic product ID based on content
-            import hashlib
-            import json
-            
-            # Create a consistent hash based on product data
-            content_for_hash = {
-                'name': product_data['product_name'],
-                'nutrition': sorted(product_data['nutrition_info'].items()) if product_data['nutrition_info'] else [],
-                'ingredients': sorted(product_data['ingredients']) if product_data['ingredients'] else []
-            }
-            content_str = json.dumps(content_for_hash, sort_keys=True)
-            temp_product_id = int(hashlib.md5(content_str.encode()).hexdigest()[:8], 16)
-            
-            logger.debug(f"Generated product ID: {temp_product_id} for vector storage")
-            
-            # Store the vector (this will work even if ChromaDB is not available)
-            success = await vector_service.store_product_vector(temp_product_id, product_data)
+            # Store the vector using the determined product_id (either from Spring server or fallback)
+            success = await vector_service.store_product_with_id(product_id, product_data)
             
             if success:
-                logger.info(f"Successfully stored vector for product {temp_product_id}")
+                logger.info(f"Successfully stored vector for product {product_id} with nutrition ratios")
                 
-                # Log vector generation details
+                # Log vector generation details and nutrition ratios
                 collection_info = await vector_service.get_collection_info()
+                stored_product = await vector_service.get_product_by_id(product_id)
+                
+                if stored_product and stored_product.get('nutrition_ratios'):
+                    nutrition_ratios = stored_product['nutrition_ratios']
+                    logger.info(f"Stored nutrition ratios for product {product_id}: "
+                              f"탄수화물 {nutrition_ratios.get('carbohydrate_ratio', 0):.1f}%, "
+                              f"단백질 {nutrition_ratios.get('protein_ratio', 0):.1f}%, "
+                              f"지방 {nutrition_ratios.get('fat_ratio', 0):.1f}%")
+                else:
+                    logger.warning(f"Nutrition ratios were not properly calculated for product {product_id}")
+                
                 logger.debug(f"Collection info after storage: {collection_info}")
             else:
-                logger.warning(f"Failed to store vector for product {temp_product_id} (ChromaDB may not be available)")
+                logger.warning(f"Failed to store vector for product {product_id} (ChromaDB may not be available)")
                 
     except Exception as e:
         # Don't let vector generation errors affect the main analysis response
