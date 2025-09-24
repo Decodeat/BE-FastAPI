@@ -87,25 +87,3 @@ graph TD
     end
 ```
 
-## 🚀 시작하기
-
-### Docker 사용 (권장)
-
-1.  프로젝트 루트 디렉토리에서 아래 명령어를 실행합니다.
-    ```bash
-    docker-compose up --build
-    ```
-
-2.  API 서버가 `http://localhost:8000`에서 실행됩니다.
-
-### 로컬 환경에서 직접 실행
-
-1.  필요한 패키지를 설치합니다.
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-2.  Uvicorn을 사용하여 서버를 실행합니다.
-    ```bash
-    uvicorn decodeat.main:app --reload
-    ```
